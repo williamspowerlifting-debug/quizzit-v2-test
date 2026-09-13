@@ -1,6 +1,5 @@
 import { config } from "./config";
-import type { Activity, Classroom, Student, StudentAttempt } from "./types";
-
+import type { Activity, Classroom, Sentence, Student, StudentAttempt } from "./types";
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(config.workerUrl + path, {
     credentials: "include",
