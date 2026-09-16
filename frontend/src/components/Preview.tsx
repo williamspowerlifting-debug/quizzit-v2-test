@@ -47,24 +47,29 @@ export function Preview({ activity, onClose }: { activity: Activity; onClose: ()
   }
 
   function nextSentence() {
-    if (index < activity.sentences.length - 1) {
-      setIndex(index + 1);
-      return;
-    }
-    let correct = 0;
-    Object.values(results).forEach(v => { if (v) correct++; });
-    // Include the current sentence's results, which may have just been submitted.
-    const currentResults = { ...results };
-    entries(sentence).forEach(({ word, gapIndex }) => {
-      if (gapIndex < 0) return;
-      const key = `${index}:${gapIndex}`;
-      currentResults[key] = clean(answers[key] || "") === clean(word.text);
-    });
-    correct = Object.values(currentResults).filter(Boolean).length;
-    setResults(currentResults);
-    setScore(total ? Math.round((correct / total) * 100) : 100);
+  if (!sentence) return;
+
+  if (index < activity.sentences.length - 1) {
+    setIndex(index + 1);
+    return;
   }
 
+  // Include the current sentence's results, which may have just been submitted.
+  const currentResults = { ...results };
+
+  entries(sentence).forEach(({ word, gapIndex }) => {
+    if (gapIndex < 0) return;
+
+    const key = `${index}:${gapIndex}`;
+    currentResults[key] =
+      clean(answers[key] || "") === clean(word.text);
+  });
+
+  const correct = Object.values(currentResults).filter(Boolean).length;
+
+  setResults(currentResults);
+  setScore(total ? Math.round((correct / total) * 100) : 100);
+}
   function previousSentence() {
     if (index > 0) setIndex(index - 1);
   }
