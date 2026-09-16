@@ -18,56 +18,177 @@ function clone<T>(value: T): T {
 
 function buildYoutubeSentences(segments: any[]) {
   const validSegments = segments.filter(
-    s => s && typeof s.text === "string" && s.text.trim() && Number.isFinite(s.start) && Number.isFinite(s.duration) && s.duration > 0,
+    s =>
+      s &&
+      typeof s.text === "string" &&
+      s.text.trim() &&
+      Number.isFinite(s.start) &&
+      Number.isFinite(s.duration) &&
+      s.duration > 0,
   );
-  const fullText = validSegments.map(s => s.text.trim()).join(" ");
-  const sentenceTexts = splitIntoSentences(fullText);
 
-  // Build approximate word timings from the caption chunks, matching the
-  // original HTML implementation. This gives every sentence real boundaries
-  // even before the optional AI refinement runs.
-  const timedWords: Array<{ text: string; start: number; end: number }> = [];
+  if (!validSegments.length) return [];
+
+  /*
+   * YouTube captions do not always contain reliable punctuation.
+   * We therefore build timed words first, then use punctuation when
+   * available and fall back to sensible caption-sized sentence groups.
+   */
+
+  const timedWords: Array<{
+    text: string;
+    start: number;
+    end: number;
+  }> = [];
+
   for (const segment of validSegments) {
     const start = Number(segment.start);
     const end = start + Number(segment.duration);
     const tokens = segment.text.trim().match(/\S+/g) || [];
     const duration = Math.max(0, end - start);
+
     tokens.forEach((text: string, i: number) => {
       timedWords.push({
         text,
-        start: start + duration * i / Math.max(tokens.length, 1),
-        end: start + duration * (i + 1) / Math.max(tokens.length, 1),
+        start:
+          start +
+          (duration * i) / Math.max(tokens.length, 1),
+        end:
+          start +
+          (duration * (i + 1)) /
+            Math.max(tokens.length, 1),
       });
     });
   }
 
+  /*
+   * First try normal punctuation-based sentence splitting.
+   */
+  const fullText = validSegments
+    .map(s => s.text.trim())
+    .join(" ");
+
+  let sentenceTexts = splitIntoSentences(fullText);
+
+  /*
+   * If punctuation failed to produce multiple sentences, use the
+   * YouTube caption boundaries to create manageable sentence groups.
+   *
+   * We combine caption chunks until we reach a natural boundary:
+   * - punctuation
+   * - roughly 12–20 words
+   * - or roughly 7 seconds of speech
+   */
+  if (sentenceTexts.length <= 1 && validSegments.length > 1) {
+    sentenceTexts = [];
+
+    let currentText = "";
+    let currentWords = 0;
+    let currentStart: number | undefined;
+    let currentEnd: number | undefined;
+
+    for (const segment of validSegments) {
+      const text = segment.text.trim();
+      if (!text) continue;
+
+      const words = text.match(/\S+/g) || [];
+      const start = Number(segment.start);
+      const end = start + Number(segment.duration);
+
+      if (currentStart === undefined) {
+        currentStart = start;
+      }
+
+      currentText += (currentText ? " " : "") + text;
+      currentWords += words.length;
+      currentEnd = end;
+
+      const endsWithPunctuation = /[.!?]["')\]]?$/.test(text);
+      const longEnough =
+        currentWords >= 12 ||
+        (currentStart !== undefined &&
+          currentEnd - currentStart >= 7);
+
+      if (endsWithPunctuation || longEnough) {
+        sentenceTexts.push(currentText.trim());
+        currentText = "";
+        currentWords = 0;
+        currentStart = undefined;
+        currentEnd = undefined;
+      }
+    }
+
+    if (currentText.trim()) {
+      sentenceTexts.push(currentText.trim());
+    }
+  }
+
   if (!sentenceTexts.length) return [];
+
+  /*
+   * Map each sentence back onto the approximate timed words.
+   */
   let wordIndex = 0;
+
   return sentenceTexts.map(text => {
     const tokens = text.match(/\S+/g) || [];
-    const words = [];
+    const words: Array<{
+      text: string;
+      start?: number;
+      end?: number;
+    }> = [];
+
     let start: number | undefined;
     let end: number | undefined;
 
     for (const token of tokens) {
-      const clean = token.toLowerCase().replace(/[^\p{L}\p{N}'-]/gu, "");
+      const clean = token
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}'-]/gu, "");
+
       let match = -1;
-      for (let j = wordIndex; j < Math.min(wordIndex + 8, timedWords.length); j++) {
-        const candidate = timedWords[j].text.toLowerCase().replace(/[^\p{L}\p{N}'-]/gu, "");
-        if (candidate === clean && clean) { match = j; break; }
+
+      for (
+        let j = wordIndex;
+        j < Math.min(wordIndex + 8, timedWords.length);
+        j++
+      ) {
+        const candidate = timedWords[j].text
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}'-]/gu, "");
+
+        if (candidate === clean && clean) {
+          match = j;
+          break;
+        }
       }
+
       if (match >= 0) {
         const w = timedWords[match];
+
         start ??= w.start;
         end = w.end;
-        words.push({ text: token, start: w.start, end: w.end });
+
+        words.push({
+          text: token,
+          start: w.start,
+          end: w.end,
+        });
+
         wordIndex = match + 1;
       } else {
         words.push({ text: token });
       }
     }
 
-    return { text, start, end: end ?? (start !== undefined ? start + 5 : undefined), words };
+    return {
+      text,
+      start,
+      end:
+        end ??
+        (start !== undefined ? start + 5 : undefined),
+      words,
+    };
   });
 }
 
