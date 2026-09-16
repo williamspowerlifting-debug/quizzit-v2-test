@@ -52,12 +52,32 @@ export function applyAiGaps(
   sentences: Sentence[],
   aiSections: { sentence: string; answers: string[] }[],
 ): Sentence[] {
+  if (!Array.isArray(aiSections) || !aiSections.length) {
+    return sentences;
+  }
+
   return sentences.map(sentence => {
+    const normalise = (text: string) =>
+      text
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/[.!?]+$/g, "");
+
+    const sentenceText = normalise(sentence.text);
+
     const match = aiSections.find(
-      x => x.sentence.trim().toLowerCase() === sentence.text.trim().toLowerCase(),
+      x => normalise(x.sentence) === sentenceText,
     );
+
     if (!match) return sentence;
-    const answers = new Set(match.answers.map(answerKey));
+
+    const answers = new Set(
+      match.answers
+        .filter(Boolean)
+        .map(answerKey),
+    );
+
     return {
       ...sentence,
       words: sentence.words.map(w => ({
