@@ -82,6 +82,15 @@ export function Builder() {
   const [saving, setSaving] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [studentLink, setStudentLink] = useState("");
+  useEffect(() => {
+  if (activity.lessonId) {
+    setStudentLink(
+      `${location.origin}${location.pathname}?id=${encodeURIComponent(activity.lessonId)}`
+    );
+  } else {
+    setStudentLink("");
+  }
+}, [activity.lessonId]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [layout, setLayout] = useState<LayoutMode>(() => (localStorage.getItem("quizzit.builderLayout") as LayoutMode) || "stacked");
 
