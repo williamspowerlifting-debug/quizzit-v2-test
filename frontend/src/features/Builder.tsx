@@ -15,7 +15,14 @@ type LayoutMode = "stacked" | "side";
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
 }
-
+function cleanFilename(filename: string) {
+  return filename
+    .replace(/\.[^/.]+$/, "")        // remove extension
+    .replace(/[_-]+/g, " ")           // underscores/hyphens → spaces
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
 function buildYoutubeSentences(segments: any[]) {
   const validSegments = segments.filter(
     s =>
@@ -234,67 +241,183 @@ export function Builder() {
     localStorage.setItem("quizzit.builderLayout", next);
   }
 
-  async function processVideo() {
-    if (!teacher) return;
-    setBusy(true); setProgress(2);
-    try {
-      if (source === "local") {
-        const input = document.querySelector<HTMLInputElement>("#video-file");
-        const file = input?.files?.[0];
-        if (!file) throw new Error("Please choose a video file.");
-        const asset = await uploadLocalVideo(file, activity.name, (p,m)=>{setProgress(p);setStatus(m);});
-        setVideo(asset);
-        setActivity(a => ({...a, videoMode:"local", videoUrl:asset.directUrl || "", lessonId:null}));
-        setStatus("Video ready. Starting transcription…");
-        const job = await api.transcribe(asset.directUrl!);
-        await poll(job.jobId);
-      } else if (source === "drive") {
-        if (!url.trim()) throw new Error("Paste a Google Drive link.");
-        const asset = await importDriveVideo(url.trim(), activity.name, (p,m)=>{setProgress(p);setStatus(m);});
-        setVideo(asset);
-        setActivity(a => ({...a, videoMode:"drive", videoUrl:asset.directUrl || "", lessonId:null}));
-        const job = await api.transcribe(asset.directUrl!);
-        await poll(job.jobId);
-      } else {
-        if (!url.trim()) throw new Error("Paste a YouTube link.");
-        setStatus("Getting YouTube transcript…"); setProgress(30);
-        const data = await importYoutube(url.trim(), (p,m)=>{setProgress(p);setStatus(m);});
-        const ytId = extractYoutubeId(url.trim());
-        const segments = Array.isArray(data.transcript) ? data.transcript : [];
-        let sentences = buildYoutubeSentences(segments);
-        const youtubeSentenceTexts = sentences.map(s => s.text);
-        if (!youtubeSentenceTexts.length) throw new Error("YouTube did not return a usable timed transcript.");
-        try {
-          // The Worker expects an array of sentence strings, not Sentence objects.
-          const refined = await api.refineYoutube(segments, youtubeSentenceTexts);
-          if (Array.isArray(refined.sentences) && refined.sentences.length === sentences.length) {
-            sentences = sentences.map((s, i) => {
-              const refinedSentence = refined.sentences[i];
-              return {
-                ...s,
-                // Keep the original timed segment as a safe fallback if the
-                // refinement response does not contain a numeric boundary.
-                start: typeof refinedSentence.start === "number" && Number.isFinite(refinedSentence.start)
+async function processVideo() {
+  if (!teacher) return;
+
+  setBusy(true);
+  setProgress(2);
+
+  try {
+    if (source === "local") {
+      const input = document.querySelector<HTMLInputElement>("#video-file");
+      const file = input?.files?.[0];
+
+      if (!file) throw new Error("Please choose a video file.");
+
+      const title = cleanFilename(file.name) || "New Listening Activity";
+
+      setActivity(a => ({ ...a, name: title }));
+
+      const asset = await uploadLocalVideo(
+        file,
+        title,
+        (p, m) => {
+          setProgress(p);
+          setStatus(m);
+        },
+      );
+
+      setVideo(asset);
+      setActivity(a => ({
+        ...a,
+        videoMode: "local",
+        videoUrl: asset.directUrl || "",
+        lessonId: null,
+      }));
+
+      setStatus("Video ready. Starting transcription…");
+
+      const job = await api.transcribe(asset.directUrl!);
+      await poll(job.jobId);
+
+    } else if (source === "drive") {
+      if (!url.trim()) throw new Error("Paste a Google Drive link.");
+
+      /*
+       * Google Drive's current import response does not expose a filename
+       * through importDriveVideo(), so use the existing activity name if
+       * the teacher has entered one, otherwise use the generic title.
+       */
+      const title =
+        activity.name.trim() &&
+        activity.name.trim() !== "New Listening Activity"
+          ? activity.name.trim()
+          : "New Listening Activity";
+
+      setActivity(a => ({ ...a, name: title }));
+
+      const asset = await importDriveVideo(
+        url.trim(),
+        title,
+        (p, m) => {
+          setProgress(p);
+          setStatus(m);
+        },
+      );
+
+      setVideo(asset);
+      setActivity(a => ({
+        ...a,
+        videoMode: "drive",
+        videoUrl: asset.directUrl || "",
+        lessonId: null,
+      }));
+
+      const job = await api.transcribe(asset.directUrl!);
+      await poll(job.jobId);
+
+    } else {
+      if (!url.trim()) throw new Error("Paste a YouTube link.");
+
+      setStatus("Getting YouTube transcript…");
+      setProgress(30);
+
+      const data = await importYoutube(
+        url.trim(),
+        (p, m) => {
+          setProgress(p);
+          setStatus(m);
+        },
+      );
+
+      const ytId = extractYoutubeId(url.trim());
+      const segments = Array.isArray(data.transcript)
+        ? data.transcript
+        : [];
+
+      let sentences = buildYoutubeSentences(segments);
+      const youtubeSentenceTexts = sentences.map(s => s.text);
+
+      if (!youtubeSentenceTexts.length) {
+        throw new Error(
+          "YouTube did not return a usable timed transcript.",
+        );
+      }
+
+      try {
+        // The Worker expects an array of sentence strings, not Sentence objects.
+        const refined = await api.refineYoutube(
+          segments,
+          youtubeSentenceTexts,
+        );
+
+        if (
+          Array.isArray(refined.sentences) &&
+          refined.sentences.length === sentences.length
+        ) {
+          sentences = sentences.map((s, i) => {
+            const refinedSentence = refined.sentences[i];
+
+            return {
+              ...s,
+              start:
+                typeof refinedSentence.start === "number" &&
+                Number.isFinite(refinedSentence.start)
                   ? refinedSentence.start
                   : s.start,
-                end: typeof refinedSentence.end === "number" && Number.isFinite(refinedSentence.end)
+              end:
+                typeof refinedSentence.end === "number" &&
+                Number.isFinite(refinedSentence.end)
                   ? refinedSentence.end
                   : s.end,
-              };
-            });
-          }
-        } catch {
-          // Segment boundaries remain the safe fallback.
+            };
+          });
         }
-
-        setActivity(a=>({...a, videoMode:"youtube", videoUrl:url.trim(), youtubeVideoId:ytId, youtubeTitle:data.title || data.metadata?.title || null, sentences, originalTranscript:youtubeSentenceTexts.join(" ")}));
-        setVideo({source:"youtube", youtubeVideoId:ytId, youtubeTitle:data.title || data.metadata?.title || undefined});
-        setProgress(100); setStatus("Activity ready.");
+      } catch {
+        // Segment boundaries remain the safe fallback.
       }
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Something went wrong.");
-    } finally { setBusy(false); }
+
+      const title =
+        data.title ||
+        data.metadata?.title ||
+        "New Listening Activity";
+
+      setActivity(a => ({
+        ...a,
+        name: title,
+        videoMode: "youtube",
+        videoUrl: url.trim(),
+        youtubeVideoId: ytId,
+        youtubeTitle:
+          data.title ||
+          data.metadata?.title ||
+          null,
+        sentences,
+        originalTranscript: youtubeSentenceTexts.join(" "),
+      }));
+
+      setVideo({
+        source: "youtube",
+        youtubeVideoId: ytId,
+        youtubeTitle:
+          data.title ||
+          data.metadata?.title ||
+          undefined,
+      });
+
+      setProgress(100);
+      setStatus("Activity ready.");
+    }
+  } catch (e) {
+    setStatus(
+      e instanceof Error
+        ? e.message
+        : "Something went wrong.",
+    );
+  } finally {
+    setBusy(false);
   }
+}
 
   async function poll(jobId: string) {
     for (let i=0;i<300;i++) {
