@@ -523,9 +523,37 @@ async function processVideo() {
       {progress>0 && <Progress value={progress} message={status}/>} 
     </section> : <>
       <section className="activity-loaded-head card">
-        <div><div className="eyebrow">Activity loaded</div><h1>{activity.name}</h1><p className="muted">Your video and transcript are ready to edit.</p></div>
-        <div className="actions"><button onClick={() => setLayoutMode(layout === "side" ? "stacked" : "side")}>{layout === "side" ? "▣ Stacked view" : "▣ Video + transcript"}</button></div>
-      </section>
+  <div>
+    <div className="eyebrow">Activity loaded</div>
+    <label>
+      Activity name
+      <input
+        value={activity.name}
+        onChange={e =>
+          setActivity(a => ({
+            ...a,
+            name: e.target.value,
+          }))
+        }
+      />
+    </label>
+    <p className="muted">
+      Your video and transcript are ready to edit.
+    </p>
+  </div>
+
+  <div className="actions">
+    <button
+      onClick={() =>
+        setLayoutMode(layout === "side" ? "stacked" : "side")
+      }
+    >
+      {layout === "side"
+        ? "▣ Stacked view"
+        : "▣ Video + transcript"}
+    </button>
+  </div>
+</section>
 
       <div className={layout === "side" ? "builder-workspace side" : "builder-workspace"}>
         <section className="card video-panel">
