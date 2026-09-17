@@ -152,22 +152,65 @@ export function mergeSentences(sentences: Sentence[], index: number): Sentence[]
 
 export function splitMergedSentence(sentence: Sentence): Sentence[] {
   if (!sentence.mergedGroupId) return [sentence];
+
   const parts = splitIntoSentences(sentence.text);
-  const start = Number.isFinite(sentence.start) ? sentence.start! : undefined;
-  const end = Number.isFinite(sentence.end) ? sentence.end! : undefined;
-  const totalChars = Math.max(1, parts.reduce((n, part) => n + part.length, 0));
+
+  const start = Number.isFinite(sentence.start)
+    ? sentence.start!
+    : undefined;
+
+  const end = Number.isFinite(sentence.end)
+    ? sentence.end!
+    : undefined;
+
+  const totalChars = Math.max(
+    1,
+    parts.reduce((n, part) => n + part.length, 0)
+  );
+
   let cursor = 0;
+  let wordIndex = 0;
+
   return parts.map((text, index) => {
     const ratioStart = cursor / totalChars;
     cursor += text.length;
     const ratioEnd = cursor / totalChars;
+
+    const newWords = wordsFromText(text);
+
+    // Preserve the gap status from the merged sentence.
+    for (let i = 0; i < newWords.length; i++) {
+      const newWord = newWords[i];
+      const mergedWord = sentence.words[wordIndex];
+
+      if (mergedWord) {
+        newWords[i] = {
+          ...newWord,
+          isGap: mergedWord.isGap,
+          start: mergedWord.start,
+          end: mergedWord.end,
+        };
+
+        wordIndex++;
+      }
+    }
+
     return {
       text,
-      words: wordsFromText(text),
+      words: newWords,
       mergedGroupId: null,
-      start: start !== undefined && end !== undefined ? start + (end - start) * ratioStart : undefined,
-      end: start !== undefined && end !== undefined ? start + (end - start) * ratioEnd : undefined,
-      sectionEnd: index === parts.length - 1 ? sentence.sectionEnd : false,
+      start:
+        start !== undefined && end !== undefined
+          ? start + (end - start) * ratioStart
+          : undefined,
+      end:
+        start !== undefined && end !== undefined
+          ? start + (end - start) * ratioEnd
+          : undefined,
+      sectionEnd:
+        index === parts.length - 1
+          ? sentence.sectionEnd
+          : false,
     };
   });
 }
