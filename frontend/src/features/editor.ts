@@ -56,24 +56,53 @@ export function applyAiGaps(
     return sentences;
   }
 
-  return sentences.map(sentence => {
-    const normalise = (text: string) =>
-      text
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ")
-        .replace(/[.!?]+$/g, "");
+  const normalise = (text: string) =>
+    text
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[.!?,;:]+$/g, "");
 
+  return sentences.map(sentence => {
     const sentenceText = normalise(sentence.text);
 
-    const match = aiSections.find(
+    // First try an exact sentence match.
+    let match = aiSections.find(
       x => normalise(x.sentence) === sentenceText,
     );
+
+    // If the AI has replaced the selected word(s) with _____,
+    // match the remaining words instead.
+    if (!match) {
+      match = aiSections.find(x => {
+        const aiText = normalise(x.sentence);
+
+        if (!aiText.includes("_____")) return false;
+
+        const aiParts = aiText
+          .split("_____")
+          .map(part => part.trim())
+          .filter(Boolean);
+
+        if (!aiParts.length) return false;
+
+        let position = 0;
+
+        return aiParts.every(part => {
+          const found = sentenceText.indexOf(part, position);
+
+          if (found === -1) return false;
+
+          position = found + part.length;
+          return true;
+        });
+      });
+    }
 
     if (!match) return sentence;
 
     const answers = new Set(
-      match.answers
+      (match.answers || [])
         .filter(Boolean)
         .map(answerKey),
     );
