@@ -445,9 +445,32 @@ async function processVideo() {
     if (!activity.sentences.length) return;
     setBusy(true); setStatus("AI is selecting gaps…");
     try {
-      const result=await api.generateGaps(activity.sentences.map(s=>s.text).join(" "), level);
-      setActivity(a=>({...a, sentences:applyAiGaps(a.sentences,result.sections)}));
-      setStatus("Gaps generated.");
+      const result = await api.generateGaps(
+  activity.sentences.map(s => s.text).join(" "),
+  level
+);
+
+console.log("QUIZZIT AI GAP RESULT:", result);
+console.log("QUIZZIT AI GAP SECTIONS:", result.sections);
+
+const updatedSentences = applyAiGaps(
+  activity.sentences,
+  result.sections
+);
+
+console.log(
+  "QUIZZIT GAPS APPLIED:",
+  updatedSentences.flatMap(s =>
+    s.words.filter(w => w.isGap).map(w => w.text)
+  )
+);
+
+setActivity(a => ({
+  ...a,
+  sentences: updatedSentences,
+}));
+
+setStatus("Gaps generated.");
     } catch(e) { setStatus(e instanceof Error ? e.message : "AI gap generation failed."); }
     finally { setBusy(false); }
   }
