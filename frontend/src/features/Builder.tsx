@@ -572,8 +572,8 @@ setStatus("Gaps generated.");
       }
     >
       {layout === "side"
-        ? "▣ Stacked view"
-        : "▣ Video + transcript"}
+        ? "▣ View stacked"
+        : "▣ View side-by-side"}
     </button>
   </div>
 </section>
